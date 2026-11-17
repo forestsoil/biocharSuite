@@ -25,8 +25,8 @@ a.app span{font-size:14px;color:#556}
 </head>
 <body>
 <header>
-  <h1>TF Biochar Suite</h1>
-  <p>Tomorrow's Foundation · Annapurna Climate Solutions</p>
+  <h1>Biochar App Suite v4</h1>
+  <p>ForestSoil.Dev</p>
 </header>
 <main>
   <div class="card" id="auth"></div>
@@ -39,7 +39,7 @@ a.app span{font-size:14px;color:#556}
 (function () {
 'use strict';
 /* Single sign-in point for all suite applets. Applets read localStorage 'bs_user' and send users here if it is missing. */
-const GOOGLE_CLIENT_ID = '';   // OAuth Web client ID; authorized JS origin https://forestsoil.github.io. Blank = name-only fallback.
+const GOOGLE_CLIENT_ID = '712889656596-385d3fgsju3dfi5mdvub6ieqajuebi1g.apps.googleusercontent.com';   // OAuth Web client ID; authorized JS origin https://forestsoil.github.io. Blank = name-only fallback.
 const KEY = 'bs_user';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
