@@ -12,12 +12,16 @@ header{background:#006432;color:#fff;padding:14px 16px}
 header h1{margin:0;font-size:20px}
 header p{margin:2px 0 0;font-size:13px;opacity:.85}
 main{max-width:640px;margin:0 auto;padding:12px}
+.card{background:#fff;border:1px solid #cfd8cf;border-radius:10px;padding:12px 14px;margin:10px 0;font-size:15px}
+.card input{width:100%;padding:8px;border:1px solid #aab;border-radius:6px;font:inherit;margin:6px 0}
+button{font:inherit;cursor:pointer;padding:6px 12px;border:1px solid #325a8c;background:#fff;color:#325a8c;border-radius:6px}
+.warn{color:#cc6600;font-size:13px}
 a.app{display:block;background:#fff;border:1px solid #cfd8cf;border-radius:10px;padding:14px;margin:10px 0;color:inherit;text-decoration:none}
 a.app:active,a.app:hover{border-color:#006432}
 a.app b{display:block;color:#006432;font-size:17px}
 a.app span{font-size:14px;color:#556}
-.soon{opacity:.55;pointer-events:none}
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 <header>
@@ -25,10 +29,62 @@ a.app span{font-size:14px;color:#556}
   <p>Tomorrow's Foundation · Annapurna Climate Solutions</p>
 </header>
 <main>
+  <div class="card" id="auth"></div>
   <a class="app" href="appAssessBiomass.html">
     <b>Biomass Assessment</b>
     <span>Tea pruning, maize cobs, invasives (3 × 3 m plots) and areca waste (per 10 trees)</span>
   </a>
 </main>
+<script>
+(function () {
+'use strict';
+/* Single sign-in point for all suite applets. Applets read localStorage 'bs_user' and send users here if it is missing. */
+const GOOGLE_CLIENT_ID = '';   // OAuth Web client ID; authorized JS origin https://forestsoil.github.io. Blank = name-only fallback.
+const KEY = 'bs_user';
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const nm = new URLSearchParams(location.search).get('next') || '';
+const next = /^[\w.-]+\.html$/.test(nm) ? nm : '';
+const getUser = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; } };
+const setUser = u => { try { localStorage.setItem(KEY, JSON.stringify(u)); } catch (e) { alert('Storage is blocked in this browser'); } };
+const go = () => { if (next) location.replace(next); };
+let gisReady = false;
+
+function draw() {
+  const u = getUser(), box = $('#auth');
+  if (u) { box.innerHTML = 'Signed in as <b>' + esc(u.email || u.name) + '</b> <button id="out" type="button">Sign out</button>'; $('#out').onclick = out; return; }
+  if (GOOGLE_CLIENT_ID) {
+    box.innerHTML = 'Sign in with Google to use the applets.<div id="gbtn" style="margin-top:8px"></div>';
+    if (gisReady) google.accounts.id.renderButton($('#gbtn'), { theme: 'outline', size: 'large', text: 'signin_with' });
+    return;
+  }
+  box.innerHTML = '<span class="warn">Google sign-in is not configured. Enter your name to continue.</span><input id="nm" type="text" placeholder="Your name"><button id="ok" type="button">Continue</button>';
+  $('#ok').onclick = () => { const n = $('#nm').value.trim(); if (!n) return; setUser({ email: '', name: n, at: new Date().toISOString() }); draw(); go(); };
+}
+function out() {
+  localStorage.removeItem(KEY);
+  try { google.accounts.id.disableAutoSelect(); } catch (e) { /* not loaded */ }
+  draw();
+}
+function gis(tries) {
+  if (!GOOGLE_CLIENT_ID) return;
+  if (!(window.google && google.accounts && google.accounts.id)) { if (tries < 60) setTimeout(() => gis(tries + 1), 500); return; }
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID, auto_select: true,
+    callback: r => {
+      try {
+        const t = r.credential.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        const p = JSON.parse(decodeURIComponent(escape(atob(t))));
+        setUser({ email: p.email, name: p.name || p.email, at: new Date().toISOString() });
+        draw(); go();
+      } catch (e) { alert('Sign-in failed'); }
+    }
+  });
+  gisReady = true;
+  if (!getUser()) draw();
+}
+if (getUser() && next) go(); else { draw(); gis(0); }
+})();
+</script>
 </body>
 </html>

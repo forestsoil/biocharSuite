@@ -52,6 +52,13 @@ main{max-width:720px;margin:0 auto;padding:6px 12px 100px}
 #toast.bad{background:var(--r)}
 dialog{border:1px solid var(--bd);border-radius:10px;max-width:92vw;width:460px}
 dialog input{width:100%;padding:8px;border:1px solid #aab;border-radius:6px;font:inherit}
+.thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.thumb{position:relative;width:96px}
+.thumb img,.thumb .ph{width:96px;height:96px;object-fit:cover;border-radius:6px;border:1px solid var(--bd);background:#e6efe6;display:block}
+.thumb button{position:absolute;top:2px;right:2px;border:0;background:#000a;color:#fff;border-radius:50%;width:22px;height:22px;line-height:20px;padding:0}
+.thumb i{display:block;font-size:11px;font-style:normal;color:#667;text-align:center}
+.fld input[readonly]{background:#f0f4f0}
+#userBox{font-size:14px}
 </style>
 </head>
 <body>
@@ -66,6 +73,7 @@ dialog input{width:100%;padding:8px;border:1px solid #aab;border-radius:6px;font
 </nav>
 <main>
   <section id="tab-form">
+    <div class="card" id="userBox"></div>
     <div class="card"><div class="fld"><label for="feed">Biomass type</label><select id="feed"></select></div></div>
     <form id="form" autocomplete="off" onsubmit="return false"></form>
   </section>
@@ -78,6 +86,8 @@ dialog input{width:100%;padding:8px;border:1px solid #aab;border-radius:6px;font
   </section>
 </main>
 <div id="bar"><button id="btnSave">Save record</button></div>
+<input type="file" id="fileCam" accept="image/*" capture="environment" hidden>
+<input type="file" id="fileGal" accept="image/*" multiple hidden>
 <div id="toast"></div>
 
 <dialog id="dlg">
@@ -97,8 +107,10 @@ dialog input{width:100%;padding:8px;border:1px solid #aab;border-radius:6px;font
 'use strict';
 
 /* ---------- config ---------- */
-const DEFAULT_GAS_URL = '';   // paste the deployed Apps Script /exec URL here, or set it in ⚙ on the device
-const KEY = { rec: 'bs_records', url: 'bs_gas_url', sticky: 'bs_sticky', feed: 'bs_feed' };
+const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbwbEz5WqKi4fgNxJ_mTwZQSbAL7Ncapo5iu2e1kXtyrZ7qfxPNvfVlTOwpqy8MyqbKANw/exec';   // paste the deployed Apps Script /exec URL here, or set it in ⚙ on the device
+const LAUNCHER = 'index.html';  // sign-in happens there; this page reads the saved identity (localStorage 'bs_user')
+const REQUIRE_PHOTO = false;  // true = at least one photo needed to save
+const KEY = { rec: 'bs_records', url: 'bs_gas_url', sticky: 'bs_sticky', feed: 'bs_feed', user: 'bs_user' };
 
 /* ---------- helpers ---------- */
 const $ = (s, r) => (r || document).querySelector(s);
@@ -126,7 +138,7 @@ const HEAD = [
   { k: 'date', label: 'Date', t: 'date', req: 1 },
   T('crew', 'Recorded by')
 ];
-const TAIL = { title: 'Other', items: [T('photo', 'Photo ID(s)'), { k: 'notes', label: 'Remarks', t: 'area', span: 1 }] };
+const TAIL = { title: 'Other', items: [{ k: 'notes', label: 'Remarks', t: 'area', span: 1 }] };
 
 const mcOf = (wet, dry) => { const w = num(wet), y = num(dry); return (w > 0 && y >= 0 && y <= w) ? (w - y) / w * 100 : NaN; };
 
@@ -135,7 +147,7 @@ const plotCore = { title: 'Plot', items: [
   T('plot_id', 'Plot ID', { req: 1, inc: 1, ph: 'e.g. L1' }),
   N('len', 'Plot length (m)', { req: 1, def: 3 }),
   N('wid', 'Plot width (m)', { req: 1, def: 3 }),
-  { k: 'gps', label: 'GPS (lat, lon)', t: 'gps', span: 1 }
+  { k: 'gps', label: 'GPS (lat, lon)', t: 'gps', span: 1, req: 1 }
 ] };
 const plotWeights = { title: 'Weights', note: 'Dry weight can be added later: after oven-drying at 105 °C for 24 h, open the record under Records and edit.', items: [
   N('fresh', 'Total fresh mass (kg)', { req: 1 }),
@@ -218,7 +230,7 @@ const FEED = {
         N('tph', 'Trees per ha (if known)'),
         S('basis', 'Waste basis', ['Fallen stock at visit', 'One harvest cycle', 'Per year (owner estimate)'], { req: 1 }),
         N('fcount', 'Fronds counted (n)'),
-        { k: 'gps', label: 'GPS (lat, lon)', t: 'gps', span: 1 }
+        { k: 'gps', label: 'GPS (lat, lon)', t: 'gps', span: 1, req: 1 }
       ] },
       { title: 'Fronds — weights', cols: 3, items: [N('fr_fresh', 'Fresh (kg)'), N('fr_wet', 'Subsample wet (g)'), N('fr_dry', 'Subsample dry (g)')] },
       { title: 'Sheaths / spathes — weights', cols: 3, items: [N('sh_fresh', 'Fresh (kg)'), N('sh_wet', 'Subsample wet (g)'), N('sh_dry', 'Subsample dry (g)')] },
@@ -263,7 +275,7 @@ function check(f, d, c) {
 
 /* ---------- state ---------- */
 let recs = jget(KEY.rec, []);
-const state = { feed: jget(KEY.feed, 'tea'), editId: null };
+const state = { feed: jget(KEY.feed, 'tea'), editId: null, photos: [], user: jget(KEY.user, null) };
 if (!FEED[state.feed]) state.feed = 'tea';
 const persist = () => jset(KEY.rec, recs);
 const getUrl = () => (localStorage.getItem(KEY.url) || DEFAULT_GAS_URL || '').trim();
@@ -274,7 +286,7 @@ function fieldHTML(it) {
   let inp;
   if (it.t === 'sel') inp = '<select id="' + id + '"><option value="">—</option>' + it.o.map(o => '<option>' + esc(o) + '</option>').join('') + '</select>';
   else if (it.t === 'area') inp = '<textarea id="' + id + '" rows="2"></textarea>';
-  else if (it.t === 'gps') inp = '<div class="row"><input id="' + id + '" type="text" placeholder="lat, lon"><button type="button" class="sm" data-gps="' + id + '">📍 GPS</button></div>';
+  else if (it.t === 'gps') inp = '<div class="row"><input id="' + id + '" type="text" readonly placeholder="waiting for GPS…"><button type="button" class="sm" data-gps="' + id + '">📍 Refresh</button></div>';
   else if (it.t === 'date') inp = '<input id="' + id + '" type="date">';
   else if (it.t === 'num') inp = '<input id="' + id + '" type="number" inputmode="decimal" step="any" min="0">';
   else inp = '<input id="' + id + '" type="text"' + (it.ph ? ' placeholder="' + esc(it.ph) + '"' : '') + '>';
@@ -303,12 +315,15 @@ function render(vals) {
   if (state.editId) h += '<div class="banner"><span>Editing a saved record. Saving re-syncs it.</span><button type="button" id="cancelEdit" class="sm">Cancel</button></div>';
   h += cardHTML('Site & survey', HEAD.map(fieldHTML).join(''));
   f.secs.forEach(s => { h += cardHTML(s.title, s.items.map(fieldHTML).join(''), s.note, s.cols); });
+  h += '<div class="card"><h2>Photos</h2><div class="note">Stamped bottom right with submitter, date-time and the GPS fix above.</div><div class="row"><button type="button" class="sm" id="btnCam">📷 Camera</button><button type="button" class="sm" id="btnGal">🖼 Gallery</button></div><div class="thumbs" id="thumbs"></div></div>';
   h += '<div class="card calc"><h2>Calculated</h2><div id="calc"></div></div>';
   $('#form').innerHTML = h;
   allItems(f).forEach(i => { const e = $('#f_' + i.k); if (e) e.value = vals[i.k] == null ? '' : vals[i.k]; });
   $('#feed').value = state.feed;
   $('#feed').disabled = !!state.editId;
   update();
+  renderPhotos();
+  if (!state.editId && !vals.gps) getGps();
 }
 function update() {
   const f = FEED[state.feed], d = readValues(), c = compute(f, d), ck = check(f, d, c);
@@ -322,6 +337,11 @@ function update() {
 function buildRow(r) {
   const f = FEED[r.feed], d = r.data, c = compute(f, d), row = {};
   row['Biomass'] = f.label;
+  const u = r.user || {}, g = parseGps(d.gps), ph = r.photos || [];
+  row['Submitter email'] = u.email || ''; row['Submitter name'] = u.name || '';
+  row['Last edited by'] = (r.editedBy && (r.editedBy.email || r.editedBy.name)) || '';
+  row['Latitude'] = g ? g.lat : ''; row['Longitude'] = g ? g.lon : ''; row['GPS accuracy (m)'] = g && g.acc != null ? g.acc : '';
+  row['Photo count'] = ph.length; row['Photo links'] = ph.map(x => x.url || '').filter(Boolean).join(' | ');
   HEAD.forEach(i => { row[i.label] = d[i.k] == null ? '' : d[i.k]; });
   f.secs.forEach(s => s.items.forEach(i => {
     row[i.label] = i.t === 'num' ? (ok(num(d[i.k])) ? num(d[i.k]) : '') : (d[i.k] == null ? '' : d[i.k]);
@@ -336,10 +356,19 @@ const isIncomplete = r => { const f = FEED[r.feed]; return !ok(compute(f, r.data
 async function syncOne(r) {
   const url = getUrl();
   if (!url) return false;
-  const body = JSON.stringify({ id: r.id, tab: FEED[r.feed].tab, saved: r.saved, updated: r.updated, row: buildRow(r) });
-  const res = await fetch(url, { method: 'POST', body });   // no custom headers: avoids CORS preflight on Apps Script
-  const j = await res.json();
-  if (!j.ok) throw new Error(j.error || 'Server error');
+  const post = async o => {   // no custom headers: avoids CORS preflight on Apps Script
+    const j = await (await fetch(url, { method: 'POST', body: JSON.stringify(o) })).json();
+    if (!j.ok) throw new Error(j.error || 'Server error');
+    return j;
+  };
+  for (const p of (r.photos || [])) {
+    if (p.url) continue;
+    const blob = await idbGet(p.id);
+    if (!blob) continue;
+    const j = await post({ action: 'photo', recId: r.id, name: p.name, mime: 'image/jpeg', b64: await toB64(blob) });
+    p.url = j.url; persist();
+  }
+  await post({ id: r.id, tab: FEED[r.feed].tab, saved: r.saved, updated: r.updated, row: buildRow(r) });
   const cur = recs.find(x => x.id === r.id);
   if (cur && cur.updated === r.updated) { cur.synced = r.updated; persist(); }
   return true;
@@ -366,9 +395,90 @@ function renderList() {
     return '<div class="rec"><div class="t"><span>' + esc(id) + ' · ' + esc(f.label) + '</span><span>' + esc(val) + '</span></div>' +
       '<div class="s">' + esc(d.garden) + ' · ' + esc(d.cls) + ' · ' + esc(d.section) + ' · ' + esc(d.date) + '</div>' +
       '<div>' + (isPending(r) ? '<span class="chip p">Not synced</span>' : '<span class="chip">Synced</span>') +
-      (isIncomplete(r) ? '<span class="chip d">Dry weight pending</span>' : '') + '</div>' +
+      (isIncomplete(r) ? '<span class="chip d">Dry weight pending</span>' : '') + ((r.photos || []).length ? '<span class="chip d">' + r.photos.length + ' photo(s)</span>' : '') + '</div>' +
       '<div class="acts"><button class="sm" data-edit="' + r.id + '">Edit</button><button class="sm del" data-del="' + r.id + '">Delete</button></div></div>';
   }).join('');
+}
+
+/* ---------- GPS ---------- */
+const parseGps = t => { const m = /(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)(?:\s*\(±(\d+)\s*m\))?/.exec(t || ''); return m ? { lat: +m[1], lon: +m[2], acc: m[3] != null ? +m[3] : null } : null; };
+let gpsBusy = false;
+function getGps() {
+  if (!$('#f_gps') || gpsBusy) return;
+  if (!navigator.geolocation) { toast('GPS not available on this device', true); return; }
+  gpsBusy = true; $('#f_gps').placeholder = 'getting GPS…';
+  navigator.geolocation.getCurrentPosition(p => {
+    gpsBusy = false;
+    const el = $('#f_gps');
+    if (el) el.value = p.coords.latitude.toFixed(6) + ', ' + p.coords.longitude.toFixed(6) + ' (±' + Math.round(p.coords.accuracy) + ' m)';
+    update();
+  }, () => {
+    gpsBusy = false;
+    const el = $('#f_gps'); if (el) el.placeholder = 'no fix: press Refresh';
+    toast('Could not get a GPS fix. Press Refresh.', true);
+  }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+}
+
+/* ---------- submitter (signed in at the launcher) ---------- */
+const submitter = () => state.user ? { email: state.user.email || '', name: state.user.name || '' } : null;
+function userBox() {
+  const u = state.user;
+  $('#userBox').innerHTML = u ? 'Signed in as <b>' + esc(u.email || u.name) + '</b> <button type="button" class="sm" id="btnOut">Sign out</button>' : '';
+}
+
+/* ---------- photos: stamp, store (IndexedDB), upload ---------- */
+const idb = () => new Promise((res, rej) => { const q = indexedDB.open('bs_photos', 1); q.onupgradeneeded = () => q.result.createObjectStore('p'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+const idbPut = (k, v) => idb().then(db => new Promise((res, rej) => { const t = db.transaction('p', 'readwrite'); t.objectStore('p').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }));
+const idbGet = k => idb().then(db => new Promise((res, rej) => { const q = db.transaction('p').objectStore('p').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }));
+const idbDel = k => idb().then(db => new Promise(res => { const t = db.transaction('p', 'readwrite'); t.objectStore('p').delete(k); t.oncomplete = res; t.onerror = res; })).catch(() => { });
+const toB64 = b => new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res(String(f.result).split(',')[1]); f.onerror = rej; f.readAsDataURL(b); });
+const stampTime = t => { const d = new Date(t), p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); };
+
+async function stamp(file, lines) {
+  let bmp;
+  try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch (e) { bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(file); }); }
+  const W = bmp.width, H = bmp.height, sc = Math.min(1, 1600 / Math.max(W, H));
+  const w = Math.round(W * sc), h = Math.round(H * sc);
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0, w, h);
+  const fs = Math.max(14, Math.round(w / 42)), pad = Math.round(fs * 0.5), lh = Math.round(fs * 1.25);
+  g.font = '600 ' + fs + 'px sans-serif'; g.textBaseline = 'top'; g.textAlign = 'right';
+  const tw = Math.max.apply(null, lines.map(l => g.measureText(l).width));
+  const bw = tw + pad * 2, bh = (lines.length - 1) * lh + fs + pad * 2;
+  g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(w - bw, h - bh, bw, bh);
+  g.fillStyle = '#fff'; lines.forEach((l, i) => g.fillText(l, w - pad, h - bh + pad + i * lh));
+  return new Promise(res => cv.toBlob(res, 'image/jpeg', 0.82));
+}
+async function addPhotos(files) {
+  const who = submitter(), g = parseGps(($('#f_gps') || {}).value);
+  if (!who) { toast('Sign in at the launcher first', true); return; }
+  if (!g) { toast('Wait for the GPS fix (or press Refresh), then add the photo', true); return; }
+  const d = readValues();
+  for (const file of files) {
+    try {
+      const ts = file.lastModified || Date.now();
+      const blob = await stamp(file, [who.email || who.name, stampTime(ts), g.lat.toFixed(6) + ', ' + g.lon.toFixed(6)]);
+      const id = uid(), tag = [d.garden, d.plot_id || d.block].filter(Boolean).join('_').replace(/[^\w-]+/g, '') || 'rec';
+      const name = tag + '_' + stampTime(ts).replace(/\D/g, '') + '_' + (state.photos.length + 1) + '.jpg';
+      await idbPut(id, blob);
+      state.photos.push({ id, name, blob }); renderPhotos();
+    } catch (e) { toast('Could not process photo', true); }
+  }
+}
+let thumbUrls = [];
+function renderPhotos() {
+  const box = $('#thumbs'); if (!box) return;
+  thumbUrls.forEach(u => URL.revokeObjectURL(u)); thumbUrls = [];
+  box.innerHTML = state.photos.map((p, i) => {
+    let img = '<div class="ph"></div>';
+    if (p.blob) { const u = URL.createObjectURL(p.blob); thumbUrls.push(u); img = '<img src="' + u + '" alt="">'; }
+    return '<div class="thumb">' + img + '<button type="button" data-rmph="' + i + '" aria-label="Remove">×</button><i>' + (p.url ? 'uploaded' : 'on device') + '</i></div>';
+  }).join('') || '<small>No photos yet.</small>';
+}
+async function loadBlobs() {
+  for (const p of state.photos) if (!p.blob) { try { p.blob = await idbGet(p.id); } catch (e) { /* ignore */ } }
+  renderPhotos();
 }
 
 /* ---------- UI wiring ---------- */
@@ -391,18 +501,23 @@ function save() {
   const miss = allItems(f).filter(i => i.req && !d[i.k]).map(i => i.label);
   if (miss.length) { toast('Required: ' + miss.join(', '), true); return; }
   if (ck.E.length) { toast(ck.E[0], true); return; }
+  const who = submitter();
+  if (!who) { toast('Sign in at the launcher first', true); return; }
+  if (!parseGps(d.gps)) { toast('GPS fix required: press Refresh', true); return; }
+  if (REQUIRE_PHOTO && !state.photos.length) { toast('Add at least one photo', true); return; }
+  const photoMeta = () => state.photos.map(p => ({ id: p.id, name: p.name, url: p.url || null }));
   const now = new Date().toISOString();
   let r, editing = !!state.editId;
-  if (editing) { r = recs.find(x => x.id === state.editId); r.data = d; r.updated = now; }
+  if (editing) { r = recs.find(x => x.id === state.editId); r.data = d; r.updated = now; r.editedBy = who; r.photos = photoMeta(); }
   else {
-    r = { id: uid(), feed: state.feed, saved: now, updated: now, synced: null, data: d };
+    r = { id: uid(), feed: state.feed, saved: now, updated: now, synced: null, data: d, user: who, photos: photoMeta() };
     recs.push(r);
     const st = {}; HEAD.forEach(i => { st[i.k] = d[i.k]; }); jset(KEY.sticky, st);
   }
   persist();
   toast(editing ? 'Record updated' : 'Saved on device');
   const incKey = (allItems(f).find(i => i.inc) || {}).k;
-  state.editId = null;
+  state.editId = null; state.photos = [];
   const nv = newVals();
   if (!editing && incKey) nv[incKey] = nextId(d[incKey]);
   render(nv);
@@ -414,29 +529,28 @@ function save() {
 document.addEventListener('input', e => { if (e.target.closest('#form')) update(); });
 document.addEventListener('change', e => { if (e.target.closest('#form')) update(); });
 document.addEventListener('click', e => {
-  const g = e.target.closest('[data-gps]');
-  if (g) {
-    if (!navigator.geolocation) { toast('GPS not available', true); return; }
-    g.disabled = true;
-    navigator.geolocation.getCurrentPosition(p => {
-      $('#' + g.dataset.gps).value = p.coords.latitude.toFixed(6) + ', ' + p.coords.longitude.toFixed(6) + ' (±' + Math.round(p.coords.accuracy) + ' m)';
-      g.disabled = false; update();
-    }, () => { toast('Could not get GPS fix', true); g.disabled = false; }, { enableHighAccuracy: true, timeout: 15000 });
-    return;
-  }
+  if (e.target.closest('[data-gps]')) { getGps(); return; }
   const ed = e.target.closest('[data-edit]');
   if (ed) {
     const r = recs.find(x => x.id === ed.dataset.edit); if (!r) return;
-    state.feed = r.feed; state.editId = r.id; render(r.data); tab('form'); window.scrollTo(0, 0); return;
+    state.feed = r.feed; state.editId = r.id; state.photos = (r.photos || []).map(p => ({ id: p.id, name: p.name, url: p.url })); render(r.data); tab('form'); window.scrollTo(0, 0); loadBlobs(); return;
   }
   const del = e.target.closest('[data-del]');
   if (del) {
     if (confirm('Delete this record from this device? A copy already synced to the sheet stays there.')) {
-      recs = recs.filter(x => x.id !== del.dataset.del); persist(); renderList();
+      const gone = recs.find(x => x.id === del.dataset.del); ((gone && gone.photos) || []).forEach(p => idbDel(p.id)); recs = recs.filter(x => x.id !== del.dataset.del); persist(); renderList();
     }
     return;
   }
-  if (e.target.id === 'cancelEdit') { state.editId = null; render(); }
+  if (e.target.id === 'cancelEdit') { state.editId = null; state.photos = []; render(); return; }
+  if (e.target.id === 'btnCam') { $('#fileCam').click(); return; }
+  if (e.target.id === 'btnGal') { $('#fileGal').click(); return; }
+  if (e.target.id === 'btnOut') { localStorage.removeItem(KEY.user); location.href = LAUNCHER; return; }
+  const rm = e.target.closest('[data-rmph]');
+  if (rm) {
+    const p = state.photos[+rm.dataset.rmph];
+    if (p && confirm('Remove this photo?')) { idbDel(p.id); state.photos.splice(+rm.dataset.rmph, 1); renderPhotos(); }
+  }
 });
 
 function csv() {
@@ -455,7 +569,7 @@ function csv() {
 $('#feed').innerHTML = Object.keys(FEED).map(k => '<option value="' + k + '">' + esc(FEED[k].label) + '</option>').join('');
 $('#feed').addEventListener('change', e => {
   const head = readValues(); state.feed = e.target.value; jset(KEY.feed, state.feed);
-  const v = newVals(); HEAD.forEach(i => { v[i.k] = head[i.k]; }); render(v);
+  const v = newVals(); HEAD.forEach(i => { v[i.k] = head[i.k]; }); if (head.gps) v.gps = head.gps; render(v);
 });
 document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => tab(b.dataset.tab)));
 $('#btnSave').addEventListener('click', save);
@@ -476,7 +590,10 @@ $('#dlgTest').addEventListener('click', async () => {
 window.addEventListener('online', () => { netBadge(); syncAll(true); });
 window.addEventListener('offline', netBadge);
 
-netBadge(); render(); renderList(); tab('form');
+$('#fileCam').addEventListener('change', e => { addPhotos(Array.from(e.target.files)); e.target.value = ''; });
+$('#fileGal').addEventListener('change', e => { addPhotos(Array.from(e.target.files)); e.target.value = ''; });
+if (!state.user) { location.replace(LAUNCHER + '?next=' + encodeURIComponent(location.pathname.split('/').pop() || '')); return; }
+netBadge(); userBox(); render(); renderList(); tab('form');
 syncAll(true);
 })();
 </script>
