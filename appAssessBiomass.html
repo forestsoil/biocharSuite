@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#006432">
+<title>Biomass Assessment · TF Biochar Suite</title>
+<style>
+:root{--g:#006432;--b:#325a8c;--o:#cc6600;--r:#b41e1e;--bg:#f5f7f5;--bd:#cfd8cf}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:#1c241c}
+header{background:var(--g);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+header h1{font-size:18px;margin:0;flex:1}
+#net{font-size:12px;padding:2px 8px;border-radius:10px;background:#ffffff33}
+#net.off{background:var(--o)}
+button{font:inherit;cursor:pointer}
+.hb{background:none;border:0;color:#fff;font-size:20px}
+nav{display:flex;background:#fff;border-bottom:1px solid var(--bd);position:sticky;top:46px;z-index:4}
+nav button{flex:1;padding:10px;border:0;background:none;border-bottom:3px solid transparent;color:#444}
+nav button.on{border-color:var(--g);color:var(--g);font-weight:600}
+main{max-width:720px;margin:0 auto;padding:6px 12px 100px}
+.card{background:#fff;border:1px solid var(--bd);border-radius:8px;padding:10px 12px;margin:10px 0}
+.card h2{font-size:15px;color:var(--g);margin:0 0 8px;padding-bottom:4px;border-bottom:1px solid var(--bd)}
+.note{font-size:12.5px;color:#556;margin:-2px 0 8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 10px}
+.grid.c3{grid-template-columns:repeat(3,1fr)}
+.fld label{display:block;font-size:13px;color:#445;margin-bottom:2px}
+.fld input,.fld select,.fld textarea{width:100%;padding:8px;border:1px solid #aab;border-radius:6px;font:inherit;background:#fff}
+.fld input:focus,.fld select:focus,.fld textarea:focus{outline:2px solid var(--b);border-color:var(--b)}
+.fld small{color:#667;font-size:12px}
+.fld.span{grid-column:1/-1}
+.row{display:flex;gap:6px}
+.sm{padding:6px 10px;border:1px solid var(--b);background:#fff;color:var(--b);border-radius:6px}
+.calc div.kv{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dotted var(--bd);font-size:14px}
+.calc div.kv b{color:var(--g)}
+.err{color:var(--r);font-size:13px;margin-top:6px}
+.warn{color:var(--o);font-size:13px;margin-top:6px}
+.banner{background:#fff4e0;border:1px solid var(--o);padding:8px 10px;border-radius:8px;margin:10px 0;display:flex;justify-content:space-between;align-items:center;gap:8px}
+#bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--bd);padding:10px 12px;display:flex;gap:8px;justify-content:center;z-index:6}
+#bar button{flex:1;max-width:340px;padding:12px;border-radius:8px;border:0;background:var(--g);color:#fff;font-weight:600}
+.rec{background:#fff;border:1px solid var(--bd);border-radius:8px;padding:8px 10px;margin:8px 0}
+.rec .t{display:flex;justify-content:space-between;gap:8px;font-weight:600}
+.rec .s{font-size:13px;color:#556}
+.chip{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:9px;margin-right:4px;background:#e6efe6;color:var(--g)}
+.chip.p{background:#fde9d0;color:var(--o)}
+.chip.d{background:#e3ebf5;color:var(--b)}
+.acts{display:flex;gap:6px;margin-top:6px}
+.acts button.del{border-color:var(--r);color:var(--r)}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+#toast{position:fixed;left:50%;bottom:76px;transform:translateX(-50%);background:#222;color:#fff;padding:8px 14px;border-radius:8px;font-size:14px;z-index:9;opacity:0;pointer-events:none;transition:.25s;max-width:90%;text-align:center}
+#toast.on{opacity:1}
+#toast.bad{background:var(--r)}
+dialog{border:1px solid var(--bd);border-radius:10px;max-width:92vw;width:460px}
+dialog input{width:100%;padding:8px;border:1px solid #aab;border-radius:6px;font:inherit}
+</style>
+</head>
+<body>
+<header>
+  <h1>Biomass Assessment</h1>
+  <span id="net">online</span>
+  <button class="hb" id="btnSet" title="Settings" aria-label="Settings">⚙</button>
+</header>
+<nav>
+  <button data-tab="form" class="on">New record</button>
+  <button data-tab="list">Records <span id="cnt"></span></button>
+</nav>
+<main>
+  <section id="tab-form">
+    <div class="card"><div class="fld"><label for="feed">Biomass type</label><select id="feed"></select></div></div>
+    <form id="form" autocomplete="off" onsubmit="return false"></form>
+  </section>
+  <section id="tab-list" hidden>
+    <div class="tools">
+      <button class="sm" id="btnSyncAll">Sync all</button>
+      <button class="sm" id="btnCsv">Export CSV</button>
+    </div>
+    <div id="list"></div>
+  </section>
+</main>
+<div id="bar"><button id="btnSave">Save record</button></div>
+<div id="toast"></div>
+
+<dialog id="dlg">
+  <h3 style="margin-top:0">Settings</h3>
+  <label for="gasUrl" style="font-size:13px">Google Apps Script web app URL (ends in /exec)</label>
+  <input id="gasUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec">
+  <p id="dlgMsg" style="font-size:13px;min-height:1.2em"></p>
+  <div class="row" style="justify-content:flex-end">
+    <button class="sm" id="dlgTest">Test</button>
+    <button class="sm" id="dlgSave">Save</button>
+    <button class="sm" id="dlgClose">Close</button>
+  </div>
+</dialog>
+
+<script>
+(function () {
+'use strict';
+
+/* ---------- config ---------- */
+const DEFAULT_GAS_URL = '';   // paste the deployed Apps Script /exec URL here, or set it in ⚙ on the device
+const KEY = { rec: 'bs_records', url: 'bs_gas_url', sticky: 'bs_sticky', feed: 'bs_feed' };
+
+/* ---------- helpers ---------- */
+const $ = (s, r) => (r || document).querySelector(s);
+const num = v => (v === '' || v == null) ? NaN : parseFloat(v);
+const ok = v => typeof v === 'number' && isFinite(v);
+const r3 = v => ok(v) ? Math.round(v * 1000) / 1000 : '';
+const show = (v, dp) => ok(v) ? v.toFixed(dp) : '—';
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+const jget = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? def : v; } catch (e) { return def; } };
+const jset = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { toast('Storage full or blocked', true); } };
+const nextId = id => { const m = /^(.*?)(\d+)$/.exec(id || ''); return m ? m[1] + (+m[2] + 1) : ''; };
+
+/* ---------- field specs ---------- */
+const T = (k, label, o) => Object.assign({ k, label, t: 'text' }, o);
+const N = (k, label, o) => Object.assign({ k, label, t: 'num' }, o);
+const S = (k, label, opts, o) => Object.assign({ k, label, t: 'sel', o: opts }, o);
+const C = (k, label, fn, dp) => ({ k, label, fn, dp: dp == null ? 2 : dp });
+
+const HEAD = [
+  T('garden', 'Garden', { req: 1 }),
+  S('cls', 'Production class', ['Low', 'Medium', 'High'], { req: 1 }),
+  T('section', 'Section(s)', { req: 1 }),
+  { k: 'date', label: 'Date', t: 'date', req: 1 },
+  T('crew', 'Recorded by')
+];
+const TAIL = { title: 'Other', items: [T('photo', 'Photo ID(s)'), { k: 'notes', label: 'Remarks', t: 'area', span: 1 }] };
+
+const mcOf = (wet, dry) => { const w = num(wet), y = num(dry); return (w > 0 && y >= 0 && y <= w) ? (w - y) / w * 100 : NaN; };
+
+/* plot form (3 m x 3 m): tea pruning, maize cobs, invasives */
+const plotCore = { title: 'Plot', items: [
+  T('plot_id', 'Plot ID', { req: 1, inc: 1, ph: 'e.g. L1' }),
+  N('len', 'Plot length (m)', { req: 1, def: 3 }),
+  N('wid', 'Plot width (m)', { req: 1, def: 3 }),
+  { k: 'gps', label: 'GPS (lat, lon)', t: 'gps', span: 1 }
+] };
+const plotWeights = { title: 'Weights', note: 'Dry weight can be added later: after oven-drying at 105 °C for 24 h, open the record under Records and edit.', items: [
+  N('fresh', 'Total fresh mass (kg)', { req: 1 }),
+  N('wet', 'Subsample wet (g)'),
+  N('dry', 'Subsample dry, 105 °C (g)')
+] };
+const plotCalcs = [
+  C('area', 'Plot area (m²)', d => num(d.len) * num(d.wid), 2),
+  C('mc', 'Moisture content (%)', d => mcOf(d.wet, d.dry), 1),
+  C('dm', 'Plot dry mass (kg)', (d, c) => num(d.fresh) * (1 - c.mc / 100), 2),
+  C('b', 'Biomass (t DM/ha)', (d, c) => 10 * c.dm / c.area, 2)
+];
+
+const FEED = {
+  tea: {
+    label: 'Tea pruning', tab: 'Tea_Pruning', form: 'plot', main: 'b',
+    secs: [
+      plotCore,
+      { title: 'Bush count (before pruning)', note: 'Count bushes whose main stem base is inside the pegs; count the left and bottom boundary, skip right and top. Second person recounts.', items: [
+        N('live1', 'Live bushes — count 1', { req: 1 }), N('live2', 'Live bushes — recount'),
+        N('vac1', 'Vacancies — count 1', { req: 1 }), N('vac2', 'Vacancies — recount')
+      ] },
+      { title: 'Stand details', items: [
+        S('ptype', 'Pruning type', ['Light prune (LP)', 'Medium skiff', 'Deep skiff', 'Collar / heavy', 'Other']),
+        N('pht', 'Pruning height (cm)'), N('age', 'Bush age (yr)'),
+        S('orig', 'Clone / seedling', ['Clone', 'Seedling', 'Mixed']),
+        S('shade', 'Shade', ['None', 'Light', 'Medium', 'Heavy']),
+        N('syield', 'Section yield (kg made tea/ha)'),
+        S('fate', 'Current fate of prunings', ['Boiler fuel', 'Worker fuelwood', 'Left as mulch', 'Burnt', 'Mixed / other'])
+      ] },
+      plotWeights, TAIL
+    ],
+    calcs: plotCalcs.concat([
+      C('live', 'Live bushes (final)', d => ok(num(d.live2)) ? num(d.live2) : num(d.live1), 0),
+      C('vac', 'Vacancies (final)', d => ok(num(d.vac2)) ? num(d.vac2) : num(d.vac1), 0),
+      C('vp', 'Vacancy (%)', (d, c) => c.vac / (c.live + c.vac) * 100, 1),
+      C('bha', 'Bushes/ha implied by plot', (d, c) => c.live / c.area * 1e4, 0),
+      C('dmb', 'kg DM per live bush', (d, c) => c.dm / c.live, 3)
+    ])
+  },
+  maize: {
+    label: 'Maize cobs', tab: 'Maize_Cobs', form: 'plot', main: 'b',
+    secs: [
+      plotCore,
+      { title: 'Sample details', note: 'One record per fraction: weigh cob, stalk or husk separately and save a record for each.', items: [
+        S('frac', 'Fraction assessed', ['Cob', 'Stalk', 'Husk'], { req: 1 }),
+        S('state', 'Cob state', ['Shelled', 'Unshelled', 'n/a']),
+        N('plants', 'Plants in plot'), N('cobs', 'Cobs in plot'),
+        T('variety', 'Variety / hybrid'), { k: 'hdate', label: 'Harvest date', t: 'date' }
+      ] },
+      plotWeights, TAIL
+    ],
+    calcs: plotCalcs.concat([
+      C('dmp', 'kg DM per plant', (d, c) => c.dm / num(d.plants), 3)
+    ])
+  },
+  inv: {
+    label: 'Invasives', tab: 'Invasives', form: 'plot', main: 'b',
+    secs: [
+      plotCore,
+      { title: 'Stand details', note: 'Parthenium: gloves and PPE (contact allergen).', items: [
+        S('sp1', 'Dominant species', ['Mikania micrantha', 'Chromolaena odorata', 'Lantana camara', 'Senna spectabilis', 'Ageratum conyzoides', 'Parthenium hysterophorus', 'Other'], { req: 1 }),
+        S('sp2', 'Second species', ['Mikania micrantha', 'Chromolaena odorata', 'Lantana camara', 'Senna spectabilis', 'Ageratum conyzoides', 'Parthenium hysterophorus', 'Other']),
+        T('spo', 'Other species / mix notes'),
+        N('cover', 'Plot cover (%)'), N('ht', 'Mean height (m)'),
+        S('cond', 'Condition at weighing', ['Fresh', 'Wilted (2–3 d)', 'Dry']),
+        S('site', 'Site', ['Tea garden margin', 'Farm border', 'Forest edge', 'Roadside', 'Other'])
+      ] },
+      plotWeights, TAIL
+    ],
+    calcs: plotCalcs
+  },
+  areca: {
+    label: 'Areca waste (per 10 trees)', tab: 'Areca_Waste', form: 'tree', main: 'dm_tot',
+    secs: [
+      { title: 'Palm block', items: [
+        T('block', 'Block / palm group ID', { req: 1, inc: 1 }),
+        N('n', 'Trees sampled', { req: 1, def: 10 }),
+        N('age', 'Palm age (yr)'),
+        N('tph', 'Trees per ha (if known)'),
+        S('basis', 'Waste basis', ['Fallen stock at visit', 'One harvest cycle', 'Per year (owner estimate)'], { req: 1 }),
+        N('fcount', 'Fronds counted (n)'),
+        { k: 'gps', label: 'GPS (lat, lon)', t: 'gps', span: 1 }
+      ] },
+      { title: 'Fronds — weights', cols: 3, items: [N('fr_fresh', 'Fresh (kg)'), N('fr_wet', 'Subsample wet (g)'), N('fr_dry', 'Subsample dry (g)')] },
+      { title: 'Sheaths / spathes — weights', cols: 3, items: [N('sh_fresh', 'Fresh (kg)'), N('sh_wet', 'Subsample wet (g)'), N('sh_dry', 'Subsample dry (g)')] },
+      { title: 'Fruit husk & fibre — weights', note: 'Leave a component blank if absent. Dry weights (105 °C, 24 h) can be added later by editing the record.', cols: 3, items: [N('hk_fresh', 'Fresh (kg)'), N('hk_wet', 'Subsample wet (g)'), N('hk_dry', 'Subsample dry (g)')] },
+      TAIL
+    ],
+    calcs: []
+  }
+};
+const COMPS = [['fr', 'Fronds'], ['sh', 'Sheaths / spathes'], ['hk', 'Fruit husk & fibre']];
+COMPS.forEach(([p, name]) => {
+  FEED.areca.calcs.push(C(p + '_mc', name + ' MC (%)', d => mcOf(d[p + '_wet'], d[p + '_dry']), 1));
+  FEED.areca.calcs.push(C(p + '_dm', name + ' dry mass (kg)', (d, c) => ok(num(d[p + '_fresh'])) ? num(d[p + '_fresh']) * (1 - c[p + '_mc'] / 100) : NaN, 2));
+});
+FEED.areca.calcs.push(
+  C('fresh_tot', 'Total fresh (kg)', d => COMPS.reduce((s, [p]) => s + (ok(num(d[p + '_fresh'])) ? num(d[p + '_fresh']) : 0), 0), 2),
+  C('dm_tot', 'Total dry mass (kg)', (d, c) => { let s = 0, n = 0; for (const [p] of COMPS) { if (ok(num(d[p + '_fresh']))) { if (!ok(c[p + '_dm'])) return NaN; s += c[p + '_dm']; n++; } } return n ? s : NaN; }, 2),
+  C('dm_tree', 'Dry mass per tree (kg)', (d, c) => c.dm_tot / num(d.n), 3),
+  C('tha', 'Dry mass per ha (t DM/ha)', (d, c) => c.dm_tree * num(d.tph) / 1000, 2)
+);
+Object.keys(FEED).forEach(k => { FEED[k].key = k; });
+
+const allItems = f => HEAD.concat(...f.secs.map(s => s.items));
+const compute = (f, d) => { const c = {}; f.calcs.forEach(x => { try { c[x.k] = x.fn(d, c); } catch (e) { c[x.k] = NaN; } }); return c; };
+
+function check(f, d, c) {
+  const E = [], W = [];
+  const pairs = f.form === 'tree' ? COMPS.map(([p, n]) => [p + '_wet', p + '_dry', n]) : [['wet', 'dry', 'Subsample']];
+  pairs.forEach(([a, b, n]) => {
+    const w = num(d[a]), y = num(d[b]);
+    if (ok(w) && ok(y) && y > w) E.push(n + ': dry weight exceeds wet weight');
+    if (ok(y) && !ok(w)) E.push(n + ': dry weight needs a wet weight');
+  });
+  if (f.form === 'plot' && !(c.area > 0)) E.push('Plot dimensions invalid');
+  if (f.form === 'tree' && !(num(d.n) > 0)) E.push('Trees sampled must be above 0');
+  if (f.key === 'tea') {
+    if (ok(num(d.live1)) && ok(num(d.live2)) && num(d.live1) !== num(d.live2)) W.push('Live-bush recount differs (' + d.live1 + ' vs ' + d.live2 + '); final uses the recount');
+    if (ok(num(d.vac1)) && ok(num(d.vac2)) && num(d.vac1) !== num(d.vac2)) W.push('Vacancy recount differs (' + d.vac1 + ' vs ' + d.vac2 + '); final uses the recount');
+  }
+  return { E, W };
+}
+
+/* ---------- state ---------- */
+let recs = jget(KEY.rec, []);
+const state = { feed: jget(KEY.feed, 'tea'), editId: null };
+if (!FEED[state.feed]) state.feed = 'tea';
+const persist = () => jset(KEY.rec, recs);
+const getUrl = () => (localStorage.getItem(KEY.url) || DEFAULT_GAS_URL || '').trim();
+
+/* ---------- form ---------- */
+function fieldHTML(it) {
+  const id = 'f_' + it.k, req = it.req ? ' *' : '';
+  let inp;
+  if (it.t === 'sel') inp = '<select id="' + id + '"><option value="">—</option>' + it.o.map(o => '<option>' + esc(o) + '</option>').join('') + '</select>';
+  else if (it.t === 'area') inp = '<textarea id="' + id + '" rows="2"></textarea>';
+  else if (it.t === 'gps') inp = '<div class="row"><input id="' + id + '" type="text" placeholder="lat, lon"><button type="button" class="sm" data-gps="' + id + '">📍 GPS</button></div>';
+  else if (it.t === 'date') inp = '<input id="' + id + '" type="date">';
+  else if (it.t === 'num') inp = '<input id="' + id + '" type="number" inputmode="decimal" step="any" min="0">';
+  else inp = '<input id="' + id + '" type="text"' + (it.ph ? ' placeholder="' + esc(it.ph) + '"' : '') + '>';
+  return '<div class="fld' + (it.span ? ' span' : '') + '"><label for="' + id + '">' + esc(it.label) + req + '</label>' + inp + '</div>';
+}
+const cardHTML = (title, body, note, cols) =>
+  '<div class="card"><h2>' + esc(title) + '</h2>' + (note ? '<div class="note">' + esc(note) + '</div>' : '') +
+  '<div class="grid' + (cols === 3 ? ' c3' : '') + '">' + body + '</div></div>';
+
+function newVals() {
+  const f = FEED[state.feed], v = {}, st = jget(KEY.sticky, {});
+  allItems(f).forEach(i => { v[i.k] = i.def != null ? String(i.def) : ''; });
+  HEAD.forEach(i => { if (st[i.k] != null) v[i.k] = st[i.k]; });
+  if (!v.date) v.date = today();
+  return v;
+}
+function readValues() {
+  const d = {};
+  allItems(FEED[state.feed]).forEach(i => { const e = $('#f_' + i.k); d[i.k] = e ? e.value.trim() : ''; });
+  return d;
+}
+function render(vals) {
+  const f = FEED[state.feed];
+  vals = vals || newVals();
+  let h = '';
+  if (state.editId) h += '<div class="banner"><span>Editing a saved record. Saving re-syncs it.</span><button type="button" id="cancelEdit" class="sm">Cancel</button></div>';
+  h += cardHTML('Site & survey', HEAD.map(fieldHTML).join(''));
+  f.secs.forEach(s => { h += cardHTML(s.title, s.items.map(fieldHTML).join(''), s.note, s.cols); });
+  h += '<div class="card calc"><h2>Calculated</h2><div id="calc"></div></div>';
+  $('#form').innerHTML = h;
+  allItems(f).forEach(i => { const e = $('#f_' + i.k); if (e) e.value = vals[i.k] == null ? '' : vals[i.k]; });
+  $('#feed').value = state.feed;
+  $('#feed').disabled = !!state.editId;
+  update();
+}
+function update() {
+  const f = FEED[state.feed], d = readValues(), c = compute(f, d), ck = check(f, d, c);
+  let h = f.calcs.map(x => '<div class="kv"><span>' + esc(x.label) + '</span><b>' + show(c[x.k], x.dp) + '</b></div>').join('');
+  ck.E.forEach(m => { h += '<div class="err">⚠ ' + esc(m) + '</div>'; });
+  ck.W.forEach(m => { h += '<div class="warn">• ' + esc(m) + '</div>'; });
+  $('#calc').innerHTML = h;
+}
+
+/* ---------- rows for sheet / CSV ---------- */
+function buildRow(r) {
+  const f = FEED[r.feed], d = r.data, c = compute(f, d), row = {};
+  row['Biomass'] = f.label;
+  HEAD.forEach(i => { row[i.label] = d[i.k] == null ? '' : d[i.k]; });
+  f.secs.forEach(s => s.items.forEach(i => {
+    row[i.label] = i.t === 'num' ? (ok(num(d[i.k])) ? num(d[i.k]) : '') : (d[i.k] == null ? '' : d[i.k]);
+  }));
+  f.calcs.forEach(x => { row['Calc: ' + x.label] = r3(c[x.k]); });
+  return row;
+}
+
+/* ---------- sync ---------- */
+const isPending = r => r.synced !== r.updated;
+const isIncomplete = r => { const f = FEED[r.feed]; return !ok(compute(f, r.data)[f.main]); };
+async function syncOne(r) {
+  const url = getUrl();
+  if (!url) return false;
+  const body = JSON.stringify({ id: r.id, tab: FEED[r.feed].tab, saved: r.saved, updated: r.updated, row: buildRow(r) });
+  const res = await fetch(url, { method: 'POST', body });   // no custom headers: avoids CORS preflight on Apps Script
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error || 'Server error');
+  const cur = recs.find(x => x.id === r.id);
+  if (cur && cur.updated === r.updated) { cur.synced = r.updated; persist(); }
+  return true;
+}
+async function syncAll(quiet) {
+  if (!getUrl()) { if (!quiet) toast('Set the web app URL in ⚙ first', true); return; }
+  const todo = recs.filter(isPending);
+  if (!todo.length) { if (!quiet) toast('Everything is synced'); return; }
+  let n = 0, fail = 0;
+  for (const r of todo) { try { if (await syncOne(r)) n++; } catch (e) { fail++; } }
+  renderList();
+  if (!quiet || n) toast('Synced ' + n + (fail ? ', ' + fail + ' failed (kept on device)' : ''), !!fail);
+}
+
+/* ---------- list ---------- */
+function renderList() {
+  $('#cnt').textContent = recs.length ? '(' + recs.length + ')' : '';
+  const box = $('#list');
+  if (!recs.length) { box.innerHTML = '<div class="card">No records yet.</div>'; return; }
+  box.innerHTML = recs.slice().reverse().map(r => {
+    const f = FEED[r.feed], d = r.data, c = compute(f, d);
+    const id = d.plot_id || d.block || '';
+    const val = f.form === 'tree' ? (ok(c.dm_tree) ? c.dm_tree.toFixed(2) + ' kg DM/tree' : '') : (ok(c.b) ? c.b.toFixed(2) + ' t DM/ha' : '');
+    return '<div class="rec"><div class="t"><span>' + esc(id) + ' · ' + esc(f.label) + '</span><span>' + esc(val) + '</span></div>' +
+      '<div class="s">' + esc(d.garden) + ' · ' + esc(d.cls) + ' · ' + esc(d.section) + ' · ' + esc(d.date) + '</div>' +
+      '<div>' + (isPending(r) ? '<span class="chip p">Not synced</span>' : '<span class="chip">Synced</span>') +
+      (isIncomplete(r) ? '<span class="chip d">Dry weight pending</span>' : '') + '</div>' +
+      '<div class="acts"><button class="sm" data-edit="' + r.id + '">Edit</button><button class="sm del" data-del="' + r.id + '">Delete</button></div></div>';
+  }).join('');
+}
+
+/* ---------- UI wiring ---------- */
+let tt;
+function toast(msg, bad) {
+  const t = $('#toast'); t.textContent = msg; t.className = 'on' + (bad ? ' bad' : '');
+  clearTimeout(tt); tt = setTimeout(() => { t.className = ''; }, 3200);
+}
+function tab(name) {
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  $('#tab-form').hidden = name !== 'form';
+  $('#tab-list').hidden = name !== 'list';
+  $('#bar').style.display = name === 'form' ? 'flex' : 'none';
+  if (name === 'list') renderList();
+}
+function netBadge() { const n = $('#net'); n.textContent = navigator.onLine ? 'online' : 'offline'; n.classList.toggle('off', !navigator.onLine); }
+
+function save() {
+  const f = FEED[state.feed], d = readValues(), c = compute(f, d), ck = check(f, d, c);
+  const miss = allItems(f).filter(i => i.req && !d[i.k]).map(i => i.label);
+  if (miss.length) { toast('Required: ' + miss.join(', '), true); return; }
+  if (ck.E.length) { toast(ck.E[0], true); return; }
+  const now = new Date().toISOString();
+  let r, editing = !!state.editId;
+  if (editing) { r = recs.find(x => x.id === state.editId); r.data = d; r.updated = now; }
+  else {
+    r = { id: uid(), feed: state.feed, saved: now, updated: now, synced: null, data: d };
+    recs.push(r);
+    const st = {}; HEAD.forEach(i => { st[i.k] = d[i.k]; }); jset(KEY.sticky, st);
+  }
+  persist();
+  toast(editing ? 'Record updated' : 'Saved on device');
+  const incKey = (allItems(f).find(i => i.inc) || {}).k;
+  state.editId = null;
+  const nv = newVals();
+  if (!editing && incKey) nv[incKey] = nextId(d[incKey]);
+  render(nv);
+  if (editing) tab('list');
+  syncOne(r).then(() => renderList()).catch(() => { });
+  renderList();
+}
+
+document.addEventListener('input', e => { if (e.target.closest('#form')) update(); });
+document.addEventListener('change', e => { if (e.target.closest('#form')) update(); });
+document.addEventListener('click', e => {
+  const g = e.target.closest('[data-gps]');
+  if (g) {
+    if (!navigator.geolocation) { toast('GPS not available', true); return; }
+    g.disabled = true;
+    navigator.geolocation.getCurrentPosition(p => {
+      $('#' + g.dataset.gps).value = p.coords.latitude.toFixed(6) + ', ' + p.coords.longitude.toFixed(6) + ' (±' + Math.round(p.coords.accuracy) + ' m)';
+      g.disabled = false; update();
+    }, () => { toast('Could not get GPS fix', true); g.disabled = false; }, { enableHighAccuracy: true, timeout: 15000 });
+    return;
+  }
+  const ed = e.target.closest('[data-edit]');
+  if (ed) {
+    const r = recs.find(x => x.id === ed.dataset.edit); if (!r) return;
+    state.feed = r.feed; state.editId = r.id; render(r.data); tab('form'); window.scrollTo(0, 0); return;
+  }
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    if (confirm('Delete this record from this device? A copy already synced to the sheet stays there.')) {
+      recs = recs.filter(x => x.id !== del.dataset.del); persist(); renderList();
+    }
+    return;
+  }
+  if (e.target.id === 'cancelEdit') { state.editId = null; render(); }
+});
+
+function csv() {
+  if (!recs.length) { toast('No records', true); return; }
+  const rows = recs.map(buildRow), heads = [];
+  rows.forEach(r => Object.keys(r).forEach(k => { if (heads.indexOf(k) < 0) heads.push(k); }));
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const out = [heads.map(q).join(',')].concat(rows.map(r => heads.map(h => q(r[h])).join(','))).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + out], { type: 'text/csv' }));
+  a.download = 'biomass_assessment_' + today() + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+/* ---------- init ---------- */
+$('#feed').innerHTML = Object.keys(FEED).map(k => '<option value="' + k + '">' + esc(FEED[k].label) + '</option>').join('');
+$('#feed').addEventListener('change', e => {
+  const head = readValues(); state.feed = e.target.value; jset(KEY.feed, state.feed);
+  const v = newVals(); HEAD.forEach(i => { v[i.k] = head[i.k]; }); render(v);
+});
+document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => tab(b.dataset.tab)));
+$('#btnSave').addEventListener('click', save);
+$('#btnSyncAll').addEventListener('click', () => syncAll(false));
+$('#btnCsv').addEventListener('click', csv);
+$('#btnSet').addEventListener('click', () => { $('#gasUrl').value = getUrl(); $('#dlgMsg').textContent = ''; $('#dlg').showModal(); });
+$('#dlgClose').addEventListener('click', () => $('#dlg').close());
+$('#dlgSave').addEventListener('click', () => { localStorage.setItem(KEY.url, $('#gasUrl').value.trim()); $('#dlgMsg').textContent = 'Saved.'; syncAll(true); });
+$('#dlgTest').addEventListener('click', async () => {
+  const u = $('#gasUrl').value.trim(), m = $('#dlgMsg');
+  if (!u) { m.textContent = 'Enter the URL first.'; return; }
+  m.textContent = 'Testing…';
+  try {
+    const j = await (await fetch(u + (u.indexOf('?') < 0 ? '?' : '&') + 'ping=1')).json();
+    m.innerHTML = j.ok ? 'Connected. <a href="' + esc(j.sheetUrl) + '" target="_blank" rel="noopener">Open sheet</a>' : 'Error: ' + esc(j.error);
+  } catch (e) { m.textContent = 'Could not reach the script (check URL, access = Anyone, and connection).'; }
+});
+window.addEventListener('online', () => { netBadge(); syncAll(true); });
+window.addEventListener('offline', netBadge);
+
+netBadge(); render(); renderList(); tab('form');
+syncAll(true);
+})();
+</script>
+</body>
+</html>

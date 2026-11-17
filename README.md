@@ -1,1 +1,29 @@
 # biocharSuite
+
+Field web apps for the TF biochar project. Static pages on GitHub Pages; data saved to a Google Sheet via Apps Script.
+
+## appAssessBiomass.html
+
+Biomass assessment recorder: tea pruning, maize cobs, invasives (3 m x 3 m plots) and areca waste (per 10 trees).
+
+URL: https://forestsoil.github.io/biocharSuite/appAssessBiomass.html
+
+**Use**
+1. Pick biomass type, fill site and plot fields, press Save. Dry mass, moisture and t DM/ha are calculated live.
+2. Records are stored on the device first and sync to the sheet when online (Records tab > Sync all).
+3. After oven-drying (105 °C, 24 h), open the record under Records > Edit, add dry weights, Save. The sheet row updates, no duplicate.
+4. Records > Export CSV gives a local backup.
+
+**Setup (once)**
+1. Create the Apps Script project under tfcarbondata@tomorrowfoundation.in, paste `appAssessBiomass_Code.gs`, set `SHEET_ID`.
+2. Deploy > Web app > Execute as: Me > Access: Anyone. After any script edit: Manage deployments > New version.
+3. Put the `/exec` URL in `DEFAULT_GAS_URL` in the HTML, or set it per device under ⚙.
+4. Check: `<exec URL>?ping=1` returns `{"ok":true,...}`.
+
+**Files**
+- `appAssessBiomass.html`: the app (single file, no dependencies)
+- `appAssessBiomass_Code.gs`: Apps Script receiver (one sheet tab per biomass type, upsert by record ID)
+
+**Notes**
+- The endpoint has no password; anyone with the URL can post rows.
+- Open the page once with data before going offline; entries made offline stay queued.
